@@ -27,7 +27,7 @@ docker-compose up --build
 ### Configuration
 
 - **RabbitMQ:** The application expects RabbitMQ to be running and accessible at `rabbitmq` with default credentials (`guest`/`guest`).
-- **Seq:** The application logs to Seq at `http://seq:5341`.
+- **Seq:** The application logs to Seq at `http://seq:5341`. (n.b. accessible in web browser at http://localhost:5341) 
 
 ### Environment Variables
 
