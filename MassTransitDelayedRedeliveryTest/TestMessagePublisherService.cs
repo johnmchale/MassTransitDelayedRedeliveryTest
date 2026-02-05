@@ -1,27 +1,25 @@
 ﻿using MassTransit;
+using MassTransitDelayedRedeliveryTest;
 
-namespace MassTransitDelayedRedeliveryTest
+public class TestMessagePublisherService : IHostedService
 {
-    public class TestMessagePublisherService : IHostedService
+    private readonly IBus _bus;
+    private readonly ILogger<TestMessagePublisherService> _logger;
+
+    public TestMessagePublisherService(IBus bus, ILogger<TestMessagePublisherService> logger)
     {
-        private readonly IBus _bus;
-
-        public TestMessagePublisherService(IBus bus)
-        {
-            _bus = bus;
-        }
-
-        public async Task StartAsync(CancellationToken cancellationToken)
-        {
-            Console.WriteLine("Publishing message to RabbitMQ...");
-
-            await _bus.Publish(new TestMessage { Text = "Hello from MassTransit!" }, cancellationToken);
-
-            Console.WriteLine("Message published! Exiting...");
-
-        }
-
-        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        _bus = bus;
+        _logger = logger;
     }
-}
 
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Publishing TestMessage to RabbitMQ...");
+
+        await _bus.Publish(new TestMessage { Text = "Hello from MassTransit!" }, cancellationToken);
+
+        _logger.LogInformation("Message published.");
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}

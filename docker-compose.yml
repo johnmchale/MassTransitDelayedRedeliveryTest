@@ -18,10 +18,12 @@ services:
   seq:
     image: datalust/seq
     container_name: seq
+    ports:
+      - 5342:80
+      - 5341:5341
     environment:
       - ACCEPT_EULA=Y
-    ports:
-      - "5341:80" # SEQ UI
+      - SEQ_FIRSTRUN_ADMINPASSWORD=admin123
 
   ## Worker Service (MassTransit Consumer)
   masstransit-delayed-redelivery-test:
