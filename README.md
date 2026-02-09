@@ -1,77 +1,206 @@
 # MassTransit Delayed Redelivery Test
 
-This project demonstrates the use of MassTransit with RabbitMQ for delayed redelivery and message retry mechanisms. It includes a .NET Worker Service that publishes and consumes messages with retry policies using Polly and MassTransit.
+This project demonstrates the use of **MassTransit with RabbitMQ** in a **.NET 8 Worker Service** to explore:
+
+- Short, immediate retries handled inside the consumer (Polly-style retries)
+- Longer back-off retries using **MassTransit delayed redelivery**
+- How these two mechanisms interact in practice
+- How to observe and verify retry vs redelivery behaviour using **Seq** and **RabbitMQ**
+
+This repo is intended as a **learning / repro project**, not a production template.
+
+---
 
 ## Prerequisites
 
-- .NET 8 SDK
-- Docker
-- RabbitMQ
-- Seq (for logging)
+- .NET 8 SDK (only required if running outside Docker)
+- Docker & Docker Compose
+- RabbitMQ (provided via Docker)
+- Seq (provided via Docker)
+
+---
 
 ## Getting Started
 
 ### Clone the Repository
 
+```bash
+git clone https://github.com/johnmchale/MassTransitDelayedRedeliveryTest.git
+cd MassTransitDelayedRedeliveryTest
+```
+
+---
 
 ### Build and Run with Docker Compose
 
-1. **Build and run the Docker containers:**
-
+```bash
 docker-compose up --build
+```
 
+This will start:
 
+- The .NET 8 worker service
+- RabbitMQ (with management UI)
+- Seq (for structured logging)
 
-    This command will build the Docker images and start the containers for the application, RabbitMQ, and Seq.
+---
 
-### Configuration
+## Service Endpoints (local)
 
-- **RabbitMQ:** The application expects RabbitMQ to be running and accessible at `rabbitmq` with default credentials (`guest`/`guest`). (n.b. accessible in web browser at http://localhost:15672 ) 
-- **Seq:** The application logs to Seq at `http://seq:5341`. (n.b. accessible in web browser at http://localhost:5341 ) 
+### RabbitMQ
+- **Management UI:** http://localhost:15672  
+  Username / password: `guest` / `guest`
 
-### Environment Variables
+### Seq
+- **Web UI (browser):** http://localhost:5342  
+- **Ingestion endpoint (used by the app):** http://localhost:5341  
 
-- `DB_ACTIVE`: Set this environment variable to `true` or `false` to simulate the database being active or inactive.
+> Inside Docker, the worker service sends logs to `http://seq:5341`.
 
-### Project Structure
+---
 
-- **MassTransitDelayedRedeliveryTest.csproj:** Project file with dependencies.
-- **Program.cs:** Entry point of the application, configures MassTransit and services.
-- **TestMessage.cs:** Defines the message contract.
-- **TestMessagePublisherService.cs:** Publishes messages to RabbitMQ.
-- **TestMessageConsumer.cs:** Consumes messages from RabbitMQ with retry policies.
-- **Dockerfile:** Dockerfile to build and run the application.
-- **docker-compose.yml:** Docker Compose file to orchestrate the application, RabbitMQ, and Seq.
+## Configuration
 
-### Usage
+### RabbitMQ
 
-1. **Publish a message:**
+The worker service connects to RabbitMQ using:
 
-    The `TestMessagePublisherService` publishes a message to RabbitMQ when the service starts.
+- Host: `rabbitmq`
+- Username: `guest`
+- Password: `guest`
 
-2. **Consume a message:**
+These values are configured for Docker networking and **do not need changing** for local testing.
 
-    The `TestMessageConsumer` consumes the message from RabbitMQ. It uses Polly for retry policies and MassTransit for delayed redelivery.
+---
 
-### Logging
+### Seq Logging
 
-The application uses Serilog for logging. Logs are written to the console and Seq.
+The application logs using **Serilog**, writing to:
 
-### Customization
+- Console
+- Seq ingestion API at `http://seq:5341` (inside Docker)
 
-- **Retry Policies:**
+The Seq **web UI** is exposed on `http://localhost:5342`.
 
-    You can customize the retry policies in `TestMessageConsumer.cs` by modifying the Polly and MassTransit configurations.
+Seq is the easiest way to verify **retry timing and behaviour**.
 
-- **Message Handling:**
+---
 
-    Modify the `Consume` method in `TestMessageConsumer.cs` to change how messages are processed.
+## Environment Variables
+
+### `DB_ACTIVE`
+
+This variable is used to **simulate a downstream dependency** (e.g. a database):
+
+- `DB_ACTIVE=true`  
+  ? message processing succeeds
+
+- `DB_ACTIVE=false`  
+  ? consumer throws an exception, triggering retries / redelivery
+
+---
+
+## Project Structure
+
+- **MassTransitDelayedRedeliveryTest.csproj**  
+  Project file and NuGet dependencies
+
+- **Program.cs**  
+  Configures the Host, MassTransit, RabbitMQ, logging, and the consumer endpoint
+
+- **TestMessage.cs**  
+  Message contract
+
+- **TestMessagePublisherService.cs**  
+  Publishes a test message when the worker service starts
+
+- **TestMessageConsumer.cs**  
+  Consumes messages and deliberately fails when `DB_ACTIVE=false`  
+  This is where retry and delayed redelivery behaviour is exercised
+
+- **Dockerfile**  
+  Builds and runs the worker service
+
+- **docker-compose.yml**  
+  Orchestrates the worker service, RabbitMQ, and Seq
+
+---
+
+## How the Demo Works
+
+### Message Publishing
+
+When the worker service starts, `TestMessagePublisherService` publishes a single test message to RabbitMQ.
+
+No manual publishing is required.
+
+---
+
+### Message Consumption & Retry Behaviour
+
+The consumer is designed to demonstrate **two distinct retry layers**:
+
+1. **Short retries (inside the consumer)**  
+   These represent quick retries for transient failures (e.g. a brief DB blip).
+
+2. **Delayed redelivery (MassTransit)**  
+   If failures persist, MassTransit schedules the message for redelivery after a longer delay.
+
+Conceptually:
+
+> **Polly handles “try again quickly”**  
+> **MassTransit handles “come back later”**
+
+---
+
+## Verifying Retry vs Delayed Redelivery
+
+### Using Seq (recommended)
+
+1. Open Seq at: http://localhost:5342
+2. Filter logs by:
+   - Consumer name
+   - Message ID / Correlation ID
+3. Observe timestamps between attempts:
+   - Short retries appear close together
+   - Delayed redelivery attempts appear later
+
+### Using RabbitMQ Management UI
+
+You can also inspect queues and exchanges to confirm messages are not being immediately reprocessed after delayed redelivery is scheduled.
+
+---
+
+## Customisation
+
+You can experiment by changing:
+
+- Retry timing and counts in `TestMessageConsumer.cs`
+- Delayed redelivery intervals in the MassTransit configuration
+- Logging detail to make timing more obvious in Seq
+
+This repo is intentionally small so these changes are easy to reason about.
+
+---
+
+## Why This Repo Exists
+
+Delayed redelivery can sometimes **appear** to behave like immediate retry if misconfigured or misunderstood.
+
+This project exists to:
+
+- Make retry vs redelivery behaviour visible
+- Provide a minimal repro when investigating timing issues
+- Act as a reference when reasoning about Polly vs MassTransit responsibilities
+
+---
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request.
+If you improve clarity (logging, comments, documentation, timing visibility), PRs are welcome.
+
+---
 
 ## License
 
-This project is licensed under the MIT License.
- 
+MIT
