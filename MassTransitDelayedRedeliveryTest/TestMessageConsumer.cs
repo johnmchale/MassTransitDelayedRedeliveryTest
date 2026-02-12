@@ -2,6 +2,7 @@
 using MassTransitDelayedRedeliveryTest;
 using Polly;
 
+
 public class TestMessageConsumer : IConsumer<TestMessage>
 {
     private readonly ILogger<TestMessageConsumer> _logger;
@@ -13,6 +14,12 @@ public class TestMessageConsumer : IConsumer<TestMessage>
 
     public async Task Consume(ConsumeContext<TestMessage> context)
     {
+        var redeliveryCount = context.GetRedeliveryCount();   // 0 if first delivery
+        var retryAttempt = context.GetRetryAttempt();      // 0 if first attempt
+
+        _logger.LogWarning("ENTER Consume: RetryAttempt={RetryAttempt} RedeliveryCount={RedeliveryCount}",
+            retryAttempt, redeliveryCount);
+
         var policy = Policy
             .Handle<Exception>()
             .WaitAndRetryAsync(3, _ => TimeSpan.FromMilliseconds(500),
