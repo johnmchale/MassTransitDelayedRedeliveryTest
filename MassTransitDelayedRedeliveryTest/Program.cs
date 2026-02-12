@@ -16,70 +16,47 @@ var host = Host.CreateDefaultBuilder(args)
     .UseSerilog()
     .ConfigureServices((context, services) =>
     {
-        // Configure MassTransit with RabbitMQ
+
         services.AddMassTransit(x =>
         {
-            x.AddConsumer<TestMessageConsumer>(); 
+            // 1) Register all consumers in the assembly (no 40+ consumer lines)
+            x.AddConsumers(typeof(TestMessageConsumer).Assembly);
+
+            // 2) Apply to EVERY endpoint created by cfg.ConfigureEndpoints(context)
+            x.AddConfigureEndpointsCallback((context, name, endpointCfg) =>
+            {
+                // IMPORTANT: delayed redelivery FIRST
+                endpointCfg.UseDelayedRedelivery(r =>
+                {
+                    r.Intervals(
+                        TimeSpan.FromSeconds(10),
+                        TimeSpan.FromSeconds(20),
+                        TimeSpan.FromSeconds(30));
+                });
+
+                // THEN immediate retry
+                endpointCfg.UseMessageRetry(r =>
+                {
+                    r.Interval(3, TimeSpan.FromSeconds(2));
+                });
+            });
 
             x.UsingRabbitMq((context, cfg) =>
             {
                 cfg.Host("rabbitmq", h =>
                 {
-                    h.Username("guest");  // Use guest/guest
+                    h.Username("guest");
                     h.Password("guest");
                 });
 
-                cfg.ReceiveEndpoint("worker-queue", e =>
-                {
-                    // n.b ensuring that both UseMessageRetry and UseDelayedRedelivery both work 
-                    // comment out one of the two to see the other in action
-                    // n.b. the ordering is important - UseMessageRetry should be configured after UseDelayedRedelivery to ensure that the retry attempts are made before the message is moved to the _skipped queue after the configured number of retries is exhausted.
-
-                    // UseMessageRetry is MassTransits built in retry policy which retries the message immediately after a failure, with an optional delay between retries.
-                    // In this case we are configuring it to retry 3 times with a 10 second delay between each retry.
-                    // If the message still fails after the configured number of retries, it will be moved to the _skipped queue.
-                    // It uses Polly under the hood to handle the retry logic, which allows for more advanced retry policies such as
-                    // exponential backoff, circuit breakers, etc. Polly also provides detailed logging and metrics for retries, which can be useful for monitoring and troubleshooting.
-
-                    e.UseDelayedRedelivery(r =>
-                    {
-                        r.Intervals(TimeSpan.FromSeconds(10),
-                                    TimeSpan.FromSeconds(20),
-                                    TimeSpan.FromSeconds(30));
-                    });
-
-                    Log.Warning("### UseMessageRetry ENABLED ###");
-                    e.UseMessageRetry(r =>
-                    {
-                        r.Interval(3, TimeSpan.FromSeconds(2)); // Retry 3 times with 10s delay
-                    });
-
-                    e.ConfigureConsumer<TestMessageConsumer>(context);
-                });
-
-
-                // this is the first attempt that actaully worked - luckily beacuse the useMessageRetry is configure AFTER the UseDelayedRedelivery
-                // because the ordering is important 
-
-                //cfg.ReceiveEndpoint("worker-queue", e =>
-                //{
-                //    e.UseDelayedRedelivery(r =>
-                //    {
-                //        r.Intervals(TimeSpan.FromSeconds(10),
-                //                    TimeSpan.FromSeconds(20),
-                //                    TimeSpan.FromSeconds(30));
-                //    });
-
-                //    e.Consumer<TestMessageConsumer>(context, c =>
-                //    {
-                //        c.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(2)));
-                //    });
-                //});
-
+                // 3) This is what creates the endpoints and triggers the callback above
+                cfg.ConfigureEndpoints(context);
             });
         });
 
+
         services.AddHostedService<TestMessagePublisherService>();
+
     })
     .Build();
 
