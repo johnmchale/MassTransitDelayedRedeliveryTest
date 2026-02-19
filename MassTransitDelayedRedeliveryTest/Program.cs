@@ -25,9 +25,18 @@ var host = Host.CreateDefaultBuilder(args)
             // 2) Apply to EVERY endpoint created by cfg.ConfigureEndpoints(context)
             x.AddConfigureEndpointsCallback((context, name, endpointCfg) =>
             {
+
+                endpointCfg.ConcurrentMessageLimit = 10;
+
                 // IMPORTANT: delayed redelivery FIRST
                 endpointCfg.UseDelayedRedelivery(r =>
                 {
+                    r.Ignore<HttpRequestException>(ex =>
+                        HttpRetryHelper.TryGetStatus(ex, out var status) &&
+                        status >= 400 && status < 500 &&
+                        status != 429);
+
+
                     r.Intervals(
                         TimeSpan.FromSeconds(10),
                         TimeSpan.FromSeconds(20),
@@ -37,6 +46,10 @@ var host = Host.CreateDefaultBuilder(args)
                 // THEN immediate retry
                 endpointCfg.UseMessageRetry(r =>
                 {
+                    r.Ignore<HttpRequestException>(ex =>
+                       HttpRetryHelper.TryGetStatus(ex, out var status) &&
+                       status >= 400 && status < 500);
+
                     r.Interval(3, TimeSpan.FromSeconds(2));
                 });
             });

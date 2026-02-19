@@ -37,7 +37,8 @@ services:
     environment:
       - SEQ_URL=http://seq:5341
       - RABBITMQ_HOST=rabbitmq
-      - DB_ACTIVE=false  # Can be changed at runtime
+      - DB_ACTIVE=true # Can be changed at runtime
+      - SIMULATED_HTTP_STATUS=500 
     volumes:
       - ~/.nuget/packages:/root/.nuget/packages:ro  # Mounts local NuGet cache
     restart: unless-stopped

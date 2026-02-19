@@ -1,7 +1,5 @@
 ﻿using MassTransit;
 using MassTransitDelayedRedeliveryTest;
-using Polly;
-
 
 public class TestMessageConsumer : IConsumer<TestMessage>
 {
@@ -14,39 +12,62 @@ public class TestMessageConsumer : IConsumer<TestMessage>
 
     public async Task Consume(ConsumeContext<TestMessage> context)
     {
-        var redeliveryCount = context.GetRedeliveryCount();   // 0 if first delivery
-        var retryAttempt = context.GetRetryAttempt();      // 0 if first attempt
+        var redeliveryCount = context.GetRedeliveryCount();
+        var retryAttempt = context.GetRetryAttempt();
 
-        _logger.LogWarning("ENTER Consume: RetryAttempt={RetryAttempt} RedeliveryCount={RedeliveryCount}",
+        _logger.LogWarning(
+            "ENTER Consume: RetryAttempt={RetryAttempt} RedeliveryCount={RedeliveryCount}",
             retryAttempt, redeliveryCount);
 
-        var policy = Policy
-            .Handle<Exception>()
-            .WaitAndRetryAsync(3, _ => TimeSpan.FromMilliseconds(500),
-                (exception, delay, retryCount, _) =>
-                {
-                    _logger.LogWarning(exception,
-                        "Polly retry {RetryCount}: retrying in {DelayMs}ms",
-                        retryCount, delay.TotalMilliseconds);
-                });
+        // ============================================================
+        // SIMULATION BLOCK – Uncomment ONE section at a time
+        // ============================================================
 
-        await policy.ExecuteAsync(async () =>
+        #region DB_SIMULATION
+
+        //var dbActiveRaw = Environment.GetEnvironmentVariable("DB_ACTIVE") ?? "true";
+
+        //if (!bool.TryParse(dbActiveRaw, out var isDbActive) || !isDbActive)
+        //{
+        //    _logger.LogWarning("SIMULATION: DB is inactive");
+        //    throw new Exception("Simulated DB failure");
+        //}
+
+        #endregion
+
+
+        #region HTTP_STATUS_SIMULATION
+
+        var statusRaw = Environment.GetEnvironmentVariable("SIMULATED_HTTP_STATUS");
+
+        if (!string.IsNullOrWhiteSpace(statusRaw) &&
+            int.TryParse(statusRaw, out var status))
         {
-            var dbActive = Environment.GetEnvironmentVariable("DB_ACTIVE") ?? "false";
-            var isDbActive = bool.TryParse(dbActive, out var result) && result;
-
-            if (!isDbActive)
+            if (status == 200)
             {
-                _logger.LogWarning(
-                    "DB is inactive. MessageId={MessageId} Text={Text}",
-                    context.MessageId, context.Message.Text);
-
-                throw new Exception("DB inactive - triggering retry");
+                _logger.LogInformation("SIMULATION: HTTP 200 - success");
             }
+            else
+            {
+                var ex = new HttpRequestException($"Simulated HTTP {status}");
+                ex.Data["StatusCode"] = status;
 
-            _logger.LogInformation(
-                "Message processed. MessageId={MessageId} Text={Text}",
-                context.MessageId, context.Message.Text);
-        });
+                _logger.LogWarning("SIMULATION: Throwing HTTP {StatusCode}", status);
+                throw ex;
+            }
+        }
+
+        #endregion
+
+        // ============================================================
+        // NORMAL SUCCESS PATH
+        // ============================================================
+
+        _logger.LogInformation(
+            "Message processed successfully. MessageId={MessageId} Text={Text}",
+            context.MessageId,
+            context.Message.Text);
+
+        await Task.CompletedTask;
     }
 }
