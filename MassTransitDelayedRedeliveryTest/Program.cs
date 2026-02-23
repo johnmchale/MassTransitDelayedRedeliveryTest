@@ -26,7 +26,9 @@ var host = Host.CreateDefaultBuilder(args)
             x.AddConfigureEndpointsCallback((context, name, endpointCfg) =>
             {
 
-                endpointCfg.ConcurrentMessageLimit = 10;
+                // PER-ENDPOINT cap (prevents a single hot queue hogging everything)
+                endpointCfg.ConcurrentMessageLimit = 1; // start with 1 (or 2)
+                endpointCfg.PrefetchCount = 4;
 
                 // IMPORTANT: delayed redelivery FIRST
                 endpointCfg.UseDelayedRedelivery(r =>
@@ -61,6 +63,10 @@ var host = Host.CreateDefaultBuilder(args)
                     h.Username("guest");
                     h.Password("guest");
                 });
+
+                // GLOBAL cap (across ALL endpoints in this container)
+                cfg.UseConcurrencyLimit(10);
+
 
                 // 3) This is what creates the endpoints and triggers the callback above
                 cfg.ConfigureEndpoints(context);
